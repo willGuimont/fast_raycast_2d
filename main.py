@@ -50,22 +50,44 @@ def naive_four_way_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_len
 
 
 def fast_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float):
+    """
+    Computes all the hits of a ray casted from `pos` with orientation `angle` for `ray_length` units with the map `m`
+
+    The algorithm is based on the fact that for a ray to intersect with a line, at least one of its point should be
+    in front of `pos`. Also one of those point must be at the left of the `pos`, and the other on the right.
+
+    This allows us to filter a lot of points and only compute the intersection with lines we know we could intersect
+    with our ray.
+    :param m: map
+    :param pos: robot's position
+    :param angle: robot's orientation
+    :param ray_length: length of the ray
+    :return: list of all hits
+    """
+    # direction vectors
     forward = np.array([np.cos(angle), np.sin(angle)])
     left = np.array([[np.cos(angle + np.pi / 2)], [np.sin(angle + np.pi / 2)]])
 
-    # front
-    in_front = np.zeros(m.shape[1])
-    in_front[np.dot((m - pos[..., None]).T, forward) > 0] = 1.0
-    is_in_front = np.convolve(in_front, np.array([1.0, 1.0, 1.0]), 'same') > 0
-    front_pts = np.nonzero(is_in_front)[0]
+    # compute which points are in front of `pos`
+    is_forward = np.zeros(m.shape[1])
+    is_forward[np.dot((m - pos[..., None]).T, forward) > 0] = 1.0
+    # convolution allows to get all lines with at least one point in front of `pos`
+    # the convolution returns True if either the point to the left or right is in front
+    is_forward = np.convolve(is_forward, np.array([1.0, 1.0, 1.0]), 'same') > 0
+    forward_pts = np.nonzero(is_forward)[0]
 
-    # left
-    is_at_left = np.dot((m[:, front_pts].T - pos), left)[:, 0] > 0
-    start_pts_idx = np.nonzero(np.diff(is_at_left))[0]
+    # compute points on the left of pos
+    is_left = np.dot((m[:, forward_pts].T - pos), left)[:, 0] > 0
 
+    # compute starting point of lines that cross
+    # np.diff allows to find sequential points that are on different sides of `pos`
+    # since left = 1 and right = 0, a non-zero diff means we passed from left to right
+    start_pts_idx = np.nonzero(np.diff(is_left))[0]
+
+    # find the hits between the ray and the filtered lines
     hits = []
     ray_end = pos + forward * ray_length
-    for pt in front_pts[start_pts_idx]:
+    for pt in forward_pts[start_pts_idx]:
         hit = line_intersect(m[:, pt], m[:, pt + 1], pos, ray_end)
         if hit is not None:
             hits.append(hit)
@@ -85,25 +107,32 @@ def fast_four_helper(in_front, is_at_left, m, pos, ray_end):
 
 
 def fast_four_way_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float):
+    """
+    Uses the same technique as `fast_raycast` but reuse computation for each cast
+    :param m: map
+    :param pos: robot's position
+    :param angle: robot's orientation
+    :param ray_length: length of the ray
+    :return: list of all hits per direction [forward, left, backward, right]
+    """
     forward = np.array([np.cos(angle), np.sin(angle)])
     left = np.array([np.cos(angle + np.pi / 2), np.sin(angle + np.pi / 2)])
 
-    in_front = np.zeros(m.shape[1])
-    in_front[np.dot((m - pos[..., None]).T, forward) > 0] = 1.0
-    is_at_left = np.zeros(m.shape[1])
-    is_at_left[np.dot((m - pos[..., None]).T, left) > 0] = 1.0
-    is_backward = 1 - in_front
-    is_at_right = 1 - is_at_left
+    # forward/backward
+    is_forward = np.zeros(m.shape[1])
+    is_forward[np.dot((m - pos[..., None]).T, forward) > 0] = 1.0
+    is_backward = 1 - is_forward
 
-    hits = []
-    # forward
-    hits.append(fast_four_helper(in_front, is_at_left, m, pos, pos + forward * ray_length))
-    # left
-    hits.append(fast_four_helper(is_at_left, is_backward, m, pos, pos + left * ray_length))
-    # backward
-    hits.append(fast_four_helper(is_backward, is_at_right, m, pos, pos - forward * ray_length))
-    # right
-    hits.append(fast_four_helper(is_at_right, in_front, m, pos, pos - left * ray_length))
+    # left/right
+    is_left = np.zeros(m.shape[1])
+    is_left[np.dot((m - pos[..., None]).T, left) > 0] = 1.0
+    is_right = 1 - is_left
+
+    # throw 4 rays, reuse position matrices to save compute
+    hits = [fast_four_helper(is_forward, is_left, m, pos, pos + forward * ray_length),  # forward
+            fast_four_helper(is_left, is_backward, m, pos, pos + left * ray_length),  # left
+            fast_four_helper(is_backward, is_right, m, pos, pos - forward * ray_length),  # backward
+            fast_four_helper(is_right, is_forward, m, pos, pos - left * ray_length)]  # right
     return hits
 
 
@@ -187,8 +216,10 @@ if __name__ == '__main__':
         num_runs = 10
         time_naive = timeit.timeit(lambda: naive_raycast(map_polygon, pos, angle, ray_length), number=num_runs)
         time_fast = timeit.timeit(lambda: fast_raycast(map_polygon, pos, angle, ray_length), number=num_runs)
-        time_four_naive = timeit.timeit(lambda: naive_four_way_raycast(map_polygon, pos, angle, ray_length), number=num_runs)
-        time_four_fast = timeit.timeit(lambda: fast_four_way_raycast(map_polygon, pos, angle, ray_length), number=num_runs)
+        time_four_naive = timeit.timeit(lambda: naive_four_way_raycast(map_polygon, pos, angle, ray_length),
+                                        number=num_runs)
+        time_four_fast = timeit.timeit(lambda: fast_four_way_raycast(map_polygon, pos, angle, ray_length),
+                                       number=num_runs)
 
         times_naive.append(time_naive)
         times_fast.append(time_fast)
