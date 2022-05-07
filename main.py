@@ -29,6 +29,22 @@ def line_intersect(a, b, c, d):
     return x, y
 
 
+def fast_line_intersect(a, b, c, d):
+    ax1, ay1 = a
+    ax2, ay2 = b
+    bx1, by1 = c
+    bx2, by2 = d
+    d = (by2 - by1) * (ax2 - ax1) - (bx2 - bx1) * (ay2 - ay1)
+    if d != 0:
+        u_a = ((bx2 - bx1) * (ay1 - by1) - (by2 - by1) * (ax1 - bx1)) / d
+    else:
+        return None
+    if u_a < 0 or u_a > 1:
+        return None
+
+    return ax1 + u_a * (ax2 - ax1), ay1 + u_a * (ay2 - ay1)
+
+
 def naive_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float):
     ray_direction = np.array([np.cos(angle), np.sin(angle)])
     ray_start, ray_end = pos, pos + ray_length * ray_direction
@@ -42,26 +58,24 @@ def naive_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: floa
     return np.array(hits).T
 
 
-def fast_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float):
+def fast_raycast(m: np.ndarray, pos: np.ndarray, angle: float):
     forward = np.array([np.cos(angle), np.sin(angle)])
-    left = np.array([np.cos(angle + np.pi / 2), np.sin(angle + np.pi / 2)])
-    ray_start, ray_end = pos, pos + ray_length * forward
+    left = np.array([[np.cos(angle + np.pi / 2)], [np.sin(angle + np.pi / 2)]])
 
     # front
     in_front = np.zeros(m.shape[1])
-    in_front[np.dot((m - pos[..., None]).T, forward[..., None]).squeeze() > 0] = 1.0
-    is_in_front = np.convolve(in_front, np.array([1, 1, 1]), 'same') > 0
+    in_front[np.dot((m - pos[..., None]).T, forward) > 0] = 1.0
+    is_in_front = np.convolve(in_front, np.array([1.0, 1.0, 1.0]), 'same') > 0
     front_pts = np.nonzero(is_in_front)[0]
 
     # left
-    is_at_left = np.dot((m[:, front_pts].T - pos[..., None].T), left[..., None]).squeeze() > 0
-
+    is_at_left = np.dot((m[:, front_pts].T - pos), left)[:, 0] > 0
     start_pts_idx = np.nonzero(np.diff(is_at_left))[0]
-    start_pts = front_pts[start_pts_idx]
 
     hits = []
-    for pt in start_pts:
-        hit = line_intersect(m[:, pt], m[:, pt + 1], ray_start, ray_end)
+    ray_end = pos + forward
+    for pt in front_pts[start_pts_idx]:
+        hit = fast_line_intersect(m[:, pt], m[:, pt + 1], pos, ray_end)
         if hit is not None:
             hits.append(hit)
     return np.array(hits).T
@@ -78,26 +92,27 @@ if __name__ == '__main__':
     angle = np.pi / 2
     ray_length = 20
 
-    naive_hits = naive_raycast(map_polygon, pos, angle, ray_length)
-    fast_hits = fast_raycast(map_polygon, pos, angle, ray_length)
+    # naive_hits = naive_raycast(map_polygon, pos, angle, ray_length)
+    # fast_hits = fast_raycast(map_polygon, pos, angle)
+    #
+    # print(f'Are outputs the same for simple case: {np.all(naive_hits == fast_hits)}')
+    #
+    # plot_map(map_polygon)
+    # plt.scatter(naive_hits[0, :], naive_hits[1, :], marker='x', c='r', label='Naive')
+    # plt.scatter(fast_hits[0, :], fast_hits[1, :], marker='x', c='b', label='Fast')
+    #
+    # plt.legend()
+    # plt.show()
 
-    print(f'Are outputs the same for simple case: {np.all(naive_hits == fast_hits)}')
-
-    plot_map(map_polygon)
-    plt.scatter(naive_hits[0, :], naive_hits[1, :], marker='x', c='r', label='Naive')
-    plt.scatter(fast_hits[0, :], fast_hits[1, :], marker='x', c='b', label='Fast')
-
-    plt.legend()
-    plt.show()
-
-    num_runs = 10_000
+    num_runs = 50_000
     time_naive = timeit.timeit(lambda: naive_raycast(map_polygon, pos, angle, ray_length), number=num_runs)
-    time_fast = timeit.timeit(lambda: fast_raycast(map_polygon, pos, angle, ray_length), number=num_runs)
+    time_fast = timeit.timeit(lambda: fast_raycast(map_polygon, pos, angle), number=num_runs)
 
     print()
     print(f'Naive time for {num_runs} runs: {time_naive}s')
     print(f'Fast time for {num_runs} runs: {time_fast}s')
     print(f'Naive / Fast = {time_naive / time_fast}')
+    exit(0)
 
     print()
     print('Checking for algorithm error')
