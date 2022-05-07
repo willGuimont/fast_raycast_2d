@@ -10,36 +10,28 @@ def plot_map(m: np.ndarray):
     plt.axis('equal')
 
 
-def ccw(A, B, C):
-    return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
-
-
-def is_intersect(A, B, C, D):
-    return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
-
-
 def line_intersect(a, b, c, d):
-    Ax1, Ay1 = a
-    Ax2, Ay2 = b
-    Bx1, By1 = c
-    Bx2, By2 = d
-    d = (By2 - By1) * (Ax2 - Ax1) - (Bx2 - Bx1) * (Ay2 - Ay1)
+    ax1, ay1 = a
+    ax2, ay2 = b
+    bx1, by1 = c
+    bx2, by2 = d
+    d = (by2 - by1) * (ax2 - ax1) - (bx2 - bx1) * (ay2 - ay1)
     if d:
-        uA = ((Bx2 - Bx1) * (Ay1 - By1) - (By2 - By1) * (Ax1 - Bx1)) / d
-        uB = ((Ax2 - Ax1) * (Ay1 - By1) - (Ay2 - Ay1) * (Ax1 - Bx1)) / d
+        u_a = ((bx2 - bx1) * (ay1 - by1) - (by2 - by1) * (ax1 - bx1)) / d
+        u_b = ((ax2 - ax1) * (ay1 - by1) - (ay2 - ay1) * (ax1 - bx1)) / d
     else:
-        return
-    if not (0 <= uA <= 1 and 0 <= uB <= 1):
-        return
-    x = Ax1 + uA * (Ax2 - Ax1)
-    y = Ay1 + uA * (Ay2 - Ay1)
+        return None
+    if not (0 <= u_a <= 1 and 0 <= u_b <= 1):
+        return None
+    x = ax1 + u_a * (ax2 - ax1)
+    y = ay1 + u_a * (ay2 - ay1)
 
     return x, y
 
 
-def naive_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_lenght: float):
+def naive_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float):
     ray_direction = np.array([np.cos(angle), np.sin(angle)])
-    ray_start, ray_end = pos, pos + ray_lenght * ray_direction
+    ray_start, ray_end = pos, pos + ray_length * ray_direction
     hits = []
     num_pts = m.shape[1]
     for i in range(num_pts - 1):
@@ -50,10 +42,10 @@ def naive_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_lenght: floa
     return np.array(hits).T
 
 
-def fast_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_lenght: float):
+def fast_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float):
     forward = np.array([np.cos(angle), np.sin(angle)])
     left = np.array([np.cos(angle + np.pi / 2), np.sin(angle + np.pi / 2)])
-    ray_start, ray_end = pos, pos + ray_lenght * forward
+    ray_start, ray_end = pos, pos + ray_length * forward
 
     # front
     in_front = np.zeros(m.shape[1])
