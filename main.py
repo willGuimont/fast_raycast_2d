@@ -1,16 +1,13 @@
+import numbers
+from typing import Union, List
+
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.io as scio
+from shapely import geometry
 
 
-def plot_map(m: np.ndarray):
-    plt.plot(m[0, :], m[1, :], 'b-')
-    plt.xlabel('x (m)')
-    plt.ylabel('y (m)')
-    plt.axis('equal')
-
-
-def line_intersect(a, b, c, d):
+def line_intersect(a, b, c, d) -> (float, float):
     ax1, ay1 = a
     ax2, ay2 = b
     bx1, by1 = c
@@ -29,7 +26,7 @@ def line_intersect(a, b, c, d):
     return x, y
 
 
-def naive_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float):
+def naive_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float) -> np.ndarray:
     ray_direction = np.array([np.cos(angle), np.sin(angle)])
     ray_start, ray_end = pos, pos + ray_length * ray_direction
     hits = []
@@ -42,19 +39,19 @@ def naive_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: floa
     return np.array(hits).T
 
 
-def naive_four_way_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float):
+def naive_four_way_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float) -> [np.ndarray]:
     hits = []
     for delta_angle in [i * np.pi / 2 for i in range(4)]:
         hits.append(naive_raycast(m, pos, angle + delta_angle, ray_length))
     return hits
 
 
-def fast_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float):
+def fast_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float) -> np.ndarray:
     """
-    Computes all the hits of a ray casted from `pos` with orientation `angle` for `ray_length` units with the map `m`
+    Computes all the hits of a ray cast from `pos` with orientation `angle` for `ray_length` units with the map `m`
 
     The algorithm is based on the fact that for a ray to intersect with a line, at least one of its point should be
-    in front of `pos`. Also one of those point must be at the left of the `pos`, and the other on the right.
+    in front of `pos`. Also, one of those point must be at the left of the `pos`, and the other on the right.
 
     This allows us to filter a lot of points and only compute the intersection with lines we know we could intersect
     with our ray.
@@ -94,7 +91,7 @@ def fast_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float
     return np.array(hits).T
 
 
-def fast_four_helper(in_front, is_at_left, m, pos, ray_end):
+def fast_four_helper(in_front, is_at_left, m, pos, ray_end) -> np.ndarray:
     is_in_front = np.convolve(in_front, np.array([1.0, 1.0, 1.0]), 'same') > 0
     front_pts = np.nonzero(is_in_front)[0]
     start_pts_idx = np.nonzero(np.diff(is_at_left[front_pts]))[0]
@@ -106,7 +103,7 @@ def fast_four_helper(in_front, is_at_left, m, pos, ray_end):
     return np.array(hits).T
 
 
-def fast_four_way_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float):
+def fast_four_way_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float) -> [np.ndarray]:
     """
     Uses the same technique as `fast_raycast` but reuse computation for each cast
     :param m: map
@@ -136,6 +133,59 @@ def fast_four_way_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_leng
     return hits
 
 
+def shapely_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float) -> np.ndarray:
+    ray_direction = np.array([np.cos(angle), np.sin(angle)])
+    ray_start, ray_end = pos, pos + ray_length * ray_direction
+    ray = geometry.LineString([ray_start, ray_end])
+    polygon = geometry.LineString(m.T)
+    hits = polygon.intersection(ray)
+    if isinstance(hits, geometry.Point):
+        return np.array(hits.xy)
+    if isinstance(hits, geometry.LineString):
+        return np.empty((2, 0))
+    else:
+        return np.array([x.xy for x in hits.geoms]).T.squeeze()
+
+
+def shapely_four_way_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float) -> [np.ndarray]:
+    hits = []
+    for delta_angle in [i * np.pi / 2 for i in range(4)]:
+        hits.append(shapely_raycast(m, pos, angle + delta_angle, ray_length))
+    return hits
+
+
+def _plot_map(m: np.ndarray, pos: np.ndarray, angle: Union[float, List[float]], ray_length: float):
+    if isinstance(angle, numbers.Number):
+        angle = [angle]
+
+    for a in angle:
+        ray_direction = np.array([np.cos(a), np.sin(a)])
+        ray_start, ray_end = pos, pos + ray_length * ray_direction
+        ray = np.stack([ray_start, ray_end]).T
+        plt.plot(ray[0, :], ray[1, :], marker='', c='r', label='ray')
+
+    plt.plot(m[0, :], m[1, :], 'b-')
+    plt.plot(pos[0], pos[1], marker='o', c='r')
+    plt.xlabel('x (m)')
+    plt.ylabel('y (m)')
+    plt.axis('equal')
+
+
+def _assert_hit_validity(ground_truth: np.ndarray, values: [np.ndarray]):
+    ground_truth.sort()
+    for v in values:
+        v.sort()
+        assert np.all(np.isclose(ground_truth, v)), "algorithms differ"
+
+
+def _assert_four_way_hit_validity(ground_truth: [np.ndarray], values: [[np.ndarray]]):
+    for gt, *vals in zip(ground_truth, *values):
+        gt.sort()
+        for v in vals:
+            v.sort()
+            assert np.all(np.isclose(gt, v)), "algorithms differ"
+
+
 if __name__ == '__main__':
     import timeit
     import tqdm
@@ -145,70 +195,88 @@ if __name__ == '__main__':
 
     pos = np.array([11, 2])
     angle = np.pi / 2
-    ray_length = 200
+    ray_length = 8
 
     # Simple case
     naive_hits = naive_raycast(map_polygon, pos, angle, ray_length)
     fast_hits = fast_raycast(map_polygon, pos, angle, ray_length)
+    shapely_hits = shapely_raycast(map_polygon, pos, angle, ray_length)
 
-    assert np.all(naive_hits == fast_hits), "algorithms differ"
-
-    plot_map(map_polygon)
+    _plot_map(map_polygon, pos, angle, ray_length)
     plt.scatter(naive_hits[0, :], naive_hits[1, :], marker='x', c='r', label='Naive')
     plt.scatter(fast_hits[0, :], fast_hits[1, :], marker='x', c='b', label='Fast')
+    plt.scatter(shapely_hits[0, :], shapely_hits[1, :], marker='x', c='g', label='Shapely')
 
+    plt.xlim(0.2, 0.3)
+    plt.ylim(0.215, 0.225)
     plt.legend()
     plt.show()
+
+    _assert_hit_validity(naive_hits, [fast_hits, shapely_hits])
 
     # Four way
     naive_four_hits = naive_four_way_raycast(map_polygon, pos, angle, ray_length)
     fast_four_hits = fast_four_way_raycast(map_polygon, pos, angle, ray_length)
+    shapely_four_hits = shapely_four_way_raycast(map_polygon, pos, angle, ray_length)
 
-    for naive, fast in zip(naive_four_hits, fast_four_hits):
-        assert np.all(np.isclose(naive, fast)), "algorithms differ"
+    _assert_four_way_hit_validity(naive_four_hits, [fast_four_hits, shapely_four_hits])
 
-    plot_map(map_polygon)
+    _plot_map(map_polygon, pos, [angle + i * np.pi / 2 for i in range(4)], ray_length)
     for x in naive_four_hits:
-        plt.scatter(x[0, :], x[1, :], marker='x', c='r')
+        if x.shape[0] != 0:
+            plt.scatter(x[0, :], x[1, :], marker='x', c='r')
     for x in fast_four_hits:
-        plt.scatter(x[0, :], x[1, :], marker='x', c='b')
+        if x.shape[0] != 0:
+            plt.scatter(x[0, :], x[1, :], marker='x', c='b')
+    for x in shapely_four_hits:
+        if x.shape[0] != 0:
+            plt.scatter(x[0, :], x[1, :], marker='x', c='g')
 
     plt.show()
 
     # Simple speed test
-    num_runs = 50_000
+    num_runs = 10_000
     print(f'Running speed test with {num_runs} trials')
-    time_naive = timeit.timeit(lambda: naive_four_way_raycast(map_polygon, pos, angle, ray_length), number=num_runs)
-    time_fast = timeit.timeit(lambda: fast_four_way_raycast(map_polygon, pos, angle, ray_length), number=num_runs)
+    time_naive = timeit.timeit(lambda: naive_raycast(map_polygon, pos, angle, ray_length), number=num_runs)
+    time_fast = timeit.timeit(lambda: fast_raycast(map_polygon, pos, angle, ray_length), number=num_runs)
+    time_shapely = timeit.timeit(lambda: shapely_raycast(map_polygon, pos, angle, ray_length), number=num_runs)
 
     print()
     print(f'Naive time for {num_runs} runs: {time_naive}s')
     print(f'Fast time for {num_runs} runs: {time_fast}s')
+    print(f'Shapely time for {num_runs} runs: {time_shapely}s')
     print(f'Naive / Fast = {time_naive / time_fast}')
+    print(f'Shapely / Fast = {time_shapely / time_fast}')
 
     # Algorithm validation
     print()
     print('Checking for algorithm error')
     for i in tqdm.tqdm(range(50_000)):
-        pos = np.array([np.random.uniform(0, 18), np.random.uniform(0, 7)])
+        pos = np.array([np.random.uniform(-2, 20), np.random.uniform(-2, 9)])
         angle = np.random.uniform(0, 2 * np.pi)
 
         naive_hits = naive_raycast(map_polygon, pos, angle, ray_length)
         fast_hits = fast_raycast(map_polygon, pos, angle, ray_length)
-        assert np.all(np.isclose(naive_hits, fast_hits)), "algorithms differ"
+        shapely_hits = shapely_raycast(map_polygon, pos, angle, ray_length)
+
+        _assert_hit_validity(naive_hits, [fast_hits, shapely_hits])
 
         naive_four_hits = naive_four_way_raycast(map_polygon, pos, angle, ray_length)
         fast_four_hits = fast_four_way_raycast(map_polygon, pos, angle, ray_length)
-        for naive, fast in zip(naive_four_hits, fast_four_hits):
-            assert np.all(np.isclose(naive, fast)), "algorithms differ"
+        shapely_four_hits = shapely_four_way_raycast(map_polygon, pos, angle, ray_length)
+
+        # shapely returns incorrect results in some cases
+        _assert_four_way_hit_validity(naive_four_hits, [fast_four_hits, shapely_four_hits])
 
     # Full speed test
     print()
     print('Comparing speed for random positions and orientations')
     times_naive = []
     times_fast = []
+    times_shapely = []
     times_four_naive = []
     times_four_fast = []
+    times_four_shapely = []
     for i in tqdm.tqdm(range(10_000)):
         pos = np.array([np.random.uniform(0, 18), np.random.uniform(0, 7)])
         angle = np.random.uniform(0, 2 * np.pi)
@@ -216,15 +284,24 @@ if __name__ == '__main__':
         num_runs = 10
         time_naive = timeit.timeit(lambda: naive_raycast(map_polygon, pos, angle, ray_length), number=num_runs)
         time_fast = timeit.timeit(lambda: fast_raycast(map_polygon, pos, angle, ray_length), number=num_runs)
+        time_shapely = timeit.timeit(lambda: shapely_raycast(map_polygon, pos, angle, ray_length), number=num_runs)
+
         time_four_naive = timeit.timeit(lambda: naive_four_way_raycast(map_polygon, pos, angle, ray_length),
                                         number=num_runs)
         time_four_fast = timeit.timeit(lambda: fast_four_way_raycast(map_polygon, pos, angle, ray_length),
                                        number=num_runs)
+        time_four_shapely = timeit.timeit(lambda: shapely_four_way_raycast(map_polygon, pos, angle, ray_length),
+                                          number=num_runs)
 
         times_naive.append(time_naive)
         times_fast.append(time_fast)
+        times_shapely.append(time_shapely)
+
         times_four_naive.append(time_four_naive)
         times_four_fast.append(time_four_fast)
+        times_four_shapely.append(time_four_shapely)
 
     print(f'Single: \tNaive / Fast = {np.sum(times_naive) / np.sum(times_fast)}')
+    print(f'Single: \tShapely / Fast = {np.sum(times_shapely) / np.sum(times_fast)}')
     print(f'Four way: \tNaive / Fast = {np.sum(times_four_naive) / np.sum(times_four_fast)}')
+    print(f'Four way: \tShapely / Fast = {np.sum(times_four_shapely) / np.sum(times_four_fast)}')
