@@ -207,8 +207,6 @@ if __name__ == '__main__':
     plt.scatter(fast_hits[0, :], fast_hits[1, :], marker='x', c='b', label='Fast')
     plt.scatter(shapely_hits[0, :], shapely_hits[1, :], marker='x', c='g', label='Shapely')
 
-    plt.xlim(0.2, 0.3)
-    plt.ylim(0.215, 0.225)
     plt.legend()
     plt.show()
 
