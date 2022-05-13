@@ -66,8 +66,7 @@ def fast_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float
     left = np.array([[np.cos(angle + np.pi / 2)], [np.sin(angle + np.pi / 2)]])
 
     # compute which points are in front of `pos`
-    is_forward = np.zeros(m.shape[1])
-    is_forward[np.dot((m - pos[..., None]).T, forward) > 0] = 1.0
+    is_forward = np.dot((m - pos[..., None]).T, forward) > 0
     # convolution allows to get all lines with at least one point in front of `pos`
     # the convolution returns True if either the point to the left or right is in front
     is_forward = np.convolve(is_forward, np.array([1.0, 1.0, 1.0]), 'same') > 0
@@ -116,13 +115,11 @@ def fast_four_way_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_leng
     left = np.array([np.cos(angle + np.pi / 2), np.sin(angle + np.pi / 2)])
 
     # forward/backward
-    is_forward = np.zeros(m.shape[1])
-    is_forward[np.dot((m - pos[..., None]).T, forward) > 0] = 1.0
+    is_forward = np.dot((m - pos[..., None]).T, forward) > 0
     is_backward = 1 - is_forward
 
     # left/right
-    is_left = np.zeros(m.shape[1])
-    is_left[np.dot((m - pos[..., None]).T, left) > 0] = 1.0
+    is_left = np.dot((m - pos[..., None]).T, left) > 0
     is_right = 1 - is_left
 
     # throw 4 rays, reuse position matrices to save compute
@@ -190,6 +187,8 @@ if __name__ == '__main__':
     import timeit
     import tqdm
 
+    VALIDATE_ALGORITHMS = False
+
     mat_data = scio.loadmat('data/map.mat')
     map_polygon = mat_data['Carte']
 
@@ -247,24 +246,25 @@ if __name__ == '__main__':
     print(f'Shapely / Fast = {time_shapely / time_fast}')
 
     # Algorithm validation
-    print()
-    print('Checking for algorithm error')
-    for i in tqdm.tqdm(range(50_000)):
-        pos = np.array([np.random.uniform(-2, 20), np.random.uniform(-2, 9)])
-        angle = np.random.uniform(0, 2 * np.pi)
+    if VALIDATE_ALGORITHMS:
+        print()
+        print('Checking for algorithm error')
+        for i in tqdm.tqdm(range(50_000)):
+            pos = np.array([np.random.uniform(-2, 20), np.random.uniform(-2, 9)])
+            angle = np.random.uniform(0, 2 * np.pi)
 
-        naive_hits = naive_raycast(map_polygon, pos, angle, ray_length)
-        fast_hits = fast_raycast(map_polygon, pos, angle, ray_length)
-        shapely_hits = shapely_raycast(map_polygon, pos, angle, ray_length)
+            naive_hits = naive_raycast(map_polygon, pos, angle, ray_length)
+            fast_hits = fast_raycast(map_polygon, pos, angle, ray_length)
+            shapely_hits = shapely_raycast(map_polygon, pos, angle, ray_length)
 
-        _assert_hit_validity(naive_hits, [fast_hits, shapely_hits])
+            _assert_hit_validity(naive_hits, [fast_hits, shapely_hits])
 
-        naive_four_hits = naive_four_way_raycast(map_polygon, pos, angle, ray_length)
-        fast_four_hits = fast_four_way_raycast(map_polygon, pos, angle, ray_length)
-        shapely_four_hits = shapely_four_way_raycast(map_polygon, pos, angle, ray_length)
+            naive_four_hits = naive_four_way_raycast(map_polygon, pos, angle, ray_length)
+            fast_four_hits = fast_four_way_raycast(map_polygon, pos, angle, ray_length)
+            shapely_four_hits = shapely_four_way_raycast(map_polygon, pos, angle, ray_length)
 
-        # shapely returns incorrect results in some cases
-        _assert_four_way_hit_validity(naive_four_hits, [fast_four_hits, shapely_four_hits])
+            # shapely returns incorrect results in some cases
+            _assert_four_way_hit_validity(naive_four_hits, [fast_four_hits, shapely_four_hits])
 
     # Full speed test
     print()
