@@ -4,10 +4,12 @@ from typing import Union, List
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.io as scio
+from numba import njit, jit
 from shapely import geometry
 
 
-def line_intersect(a, b, c, d) -> (float, float):
+@njit
+def line_intersect(a: float, b: float, c: float, d: float) -> (float, float):
     ax1, ay1 = a
     ax2, ay2 = b
     bx1, by1 = c
