@@ -1,15 +1,15 @@
 import numbers
-from typing import Union, List
+from typing import Union, List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.io as scio
-from numba import njit, jit
+from numba import njit
 from shapely import geometry
 
 
 @njit
-def line_intersect(a: float, b: float, c: float, d: float) -> (float, float):
+def line_intersect(a: np.ndarray, b: np.ndarray, c: np.ndarray, d: np.ndarray) -> Optional[np.ndarray]:
     ax1, ay1 = a
     ax2, ay2 = b
     bx1, by1 = c
@@ -20,12 +20,14 @@ def line_intersect(a: float, b: float, c: float, d: float) -> (float, float):
         u_b = ((ax2 - ax1) * (ay1 - by1) - (ay2 - ay1) * (ax1 - bx1)) / d
     else:
         return None
+
     if not (0 <= u_a <= 1 and 0 <= u_b <= 1):
         return None
+
     x = ax1 + u_a * (ax2 - ax1)
     y = ay1 + u_a * (ay2 - ay1)
 
-    return x, y
+    return np.array([x, y])
 
 
 def naive_raycast(m: np.ndarray, pos: np.ndarray, angle: float, ray_length: float) -> np.ndarray:
