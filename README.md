@@ -1,2 +1,2 @@
 # fast_raycast_2d
-Fast raycast in 2D
+Fast 2D raycasting for robotics simulation.
